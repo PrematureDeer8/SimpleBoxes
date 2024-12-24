@@ -1,7 +1,6 @@
 import torch
 from torch.optim import Adam
 from SimpleBoxes import SimpleBoxes
-from nms import nms
 from simpleloss import SimpleBoxesLoss
 from utils import match
 from prior import PriorBoxes
@@ -12,15 +11,15 @@ from dataloader import SynthtextDataset
 
 if(torch.cuda.is_available()):
     device = ("cuda:0");
-# elif(torch.backends.mps.is_available()):
-    # device = ("mps"); # <-- this is for apple machines (use the neural cores)
+elif(torch.backends.mps.is_available()):
+    device = ("mps"); # <-- this is for apple machines (use the neural cores)
 else:
     device = ("cpu");
 
 
 
 
-DIR_PATH = "/data/torre324/.cache/kagglehub/datasets/wstevens11/training-sample-8472/versions/1/training_sample_8472/107"; 
+DIR_PATH = "./training_sample_8472/107"; 
 
 def main():
 
@@ -34,13 +33,14 @@ def main():
 
     #increasing alpha will make the bounding box loss have a greater weight
     #neg_pos_ratio is for the hard negative mining (smaller number means less negative samples being applied to the loss function)
-    loss_func = SimpleBoxesLoss(torch.Tensor([1, 1]).to(device), alpha=1.5, neg_pos_ratio=15); 
+    loss_func = SimpleBoxesLoss(torch.Tensor([0.0149, 1]).to(device), alpha=1.5, neg_pos_ratio=15); 
 
     #TODO -- karthik adds backpropagation method
     optimizer = Adam(model.parameters(), lr=.001)
 
-    epochs = 1 # (PLACEHOLDER)
+    epochs = 30 # (PLACEHOLDER)
     train_loader = DataLoader(dataset, batch_size=16, shuffle=True);
+    losses = np.empty(shape=(5,));
 
     #change this line if you are going to do different size images
 
@@ -83,9 +83,20 @@ def main():
 
 
         cur_loss = total_loss / len(train_loader);
+        #auto adjust learning rate if last 5 losses are relatively similar (variance < 100)
+        losses = np.append(losses, cur_loss)
+        if(losses.shape[0] >= 5):
+            if(losses[-5:].var() < 100):
+                if(optimizer.param_groups[0]['lr'] / 2  < 0.0001):
+                    print("Stopping training!");
+                    break;
+                optimizer.param_groups[0]["lr"] = max(optimizer.param_groups[0]["lr"] / 2, 0.0001);
+                print(f"Lowering lr to: {optimizer.param_groups[0]['lr']}");
+
+
         print(f"Epoch {epoch + 1}: {cur_loss}");
 
-    torch.save(model.state_dict(), "./test.pt")
+    torch.save(model.state_dict(), "./state.pt")
 
 
 if(__name__ == "__main__"):
